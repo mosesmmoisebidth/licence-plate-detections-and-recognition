@@ -5,7 +5,7 @@ from sort import *
 from util import get_car, read_license_plate, write_csv
 
 results = {}
-license_plate_texts = {}
+license_plate_texts = set()
 
 mot_tracker = Sort()
 
@@ -15,6 +15,9 @@ license_plate_detector = YOLO('license_plate_detector.pt')
 
 # load video
 cap = cv2.VideoCapture('sample.mp4')
+fps = cap.get(cv2.CAP_PROP_FPS)
+desired_fps = 1
+desired_frame_rate = int(fps / desired_fps)
 
 vehicles = [2, 3, 5, 7]
 
@@ -23,9 +26,10 @@ frame_nmr = -1
 while cap.isOpened():
     frame_nmr += 1
     ret, frame = cap.read()
-    frame = cv2.resize(frame, (900, 900))
     if not ret:
         break  # Break the loop if there are no more frames to read
+    if frame_nmr % desired_frame_rate != 0:
+        continue
     results[frame_nmr] = {}
     # detect vehicles
     detections = coco_model(frame)[0]
@@ -37,6 +41,8 @@ while cap.isOpened():
 
     # track vehicles
     track_ids = mot_tracker.update(np.asarray(detections_))
+    adjusted_frame_nmr = len(results) + 1
+    results[adjusted_frame_nmr] = {}
 
     # detect license plates
     license_plates = license_plate_detector(frame)[0]
@@ -58,24 +64,29 @@ while cap.isOpened():
             # read license plate number
             license_plate_text, license_plate_text_score = read_license_plate(license_plate_crop_thresh)
 
+
+
             if license_plate_text is not None:
                 if license_plate_text not in license_plate_texts:
-                    license_plate_texts[frame_nmr] = license_plate_text
-                results[frame_nmr][car_id] = {'car': {'bbox': [xcar1, ycar1, xcar2, ycar2]},
-                                              'license_plate': {'bbox': [x1, y1, x2, y2],
-                                                                'text': license_plate_text,
-                                                                'bbox_score': score,
-                                                                'text_score': license_plate_text_score}}
+                    license_plate_texts.add(license_plate_text)
+                    results[adjusted_frame_nmr][car_id] = {'car': {'bbox': [xcar1, ycar1, xcar2, ycar2]},
+                                                  'license_plate': {'bbox': [x1, y1, x2, y2],
+                                                                    'text': license_plate_text,
+                                                                    'bbox_score': score,
+                                                                    'text_score': license_plate_text_score
+                                                                    }
+                                                  }
+                    write_csv(results, 'test.csv')
+                    print("the average license_plate texts are: {}".format(license_plate_texts))
+                else:
+                    print("Duplicate license_plate_text found: {}".format(license_plate_text))
 
-
-                write_csv(results, './test.csv')
-
-                print("the license_plates are: {}".format(license_plate_texts))
 
     if cv2.waitKey(1) == ord('q'):
-        print("the license_plates are: {}".format(license_plate_texts))
-        break  # Break the loop if 'q' is pressed
+        break
 
-# Release video capture and close all windows
+
 cap.release()
 cv2.destroyAllWindows()
+
+print("the license_plate texts are: {}".format(license_plate_texts))
